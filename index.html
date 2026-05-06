@@ -1,0 +1,1294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
+  <title>Choose Your Own Adventure</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+  <style>
+    /* ========================================================================
+       1. Design tokens — soft “ocean buddy” palette (Piplup-inspired)
+       ======================================================================== */
+    :root {
+      --color-bg: #9fd4ff;
+      --color-text: #143250;
+      --color-text-soft: #2a4a6d;
+      --color-muted: rgba(26, 48, 72, 0.72);
+      --color-accent: #4ea8ff;
+      --color-accent-deep: #2d87e6;
+      --color-mint: #b8f0e8;
+      --color-bubble: rgba(255, 255, 255, 0.72);
+
+      /* Glass panel: light blur + gentle dark tint for readability */
+      --glass-shine: rgba(255, 255, 255, 0.38);
+      --glass-fill: rgba(0, 0, 0, 0.42);
+      --glass-border: rgba(255, 255, 255, 0.55);
+      --glass-shadow: 0 12px 40px rgba(40, 100, 160, 0.18),
+        0 4px 14px rgba(20, 60, 100, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.55);
+
+      --panel-max-width: min(28rem, 100%); /* ~448px — comfy reading column */
+      --panel-radius: 1.5rem;
+      --panel-pad-y: clamp(1.15rem, 3.2vw, 1.55rem);
+      --panel-pad-x: clamp(1.15rem, 3.8vw, 1.45rem);
+
+      /* Extra outer air so the scene art stays the hero */
+      --page-pad-x: clamp(1.15rem, 6vw, 3.25rem);
+      --page-pad-y: clamp(1.35rem, 5vh, 2.75rem);
+
+      --story-font-min: 0.8125rem;
+      --story-font-max: 0.9375rem;
+      --story-max-ch: 38ch;
+      --choice-font-min: 0.78rem;
+      --choice-font-max: 0.86rem;
+
+      --touch-min-height: 2.75rem;
+      --choice-btn-min-h: 2.5rem;
+      --choice-gap: clamp(0.65rem, 2vw, 0.9rem);
+      --choice-max-width: min(17.5rem, 100%);
+
+      --ease-playful: cubic-bezier(0.33, 1.24, 0.52, 1);
+      --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+      --scene-fade-ms: 0.6s;
+      --bg-crossfade-ms: 1.2s;
+    }
+
+    /* ========================================================================
+       2. Reset & document base
+       ======================================================================== */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      height: 100%;
+      height: -webkit-fill-available;
+      overflow-x: hidden;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100%;
+      min-height: 100vh;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      overflow-x: hidden;
+      overflow-y: hidden;
+      font-family: "Nunito", system-ui, sans-serif;
+      color: var(--color-text);
+      background: radial-gradient(
+          ellipse 120% 80% at 50% 20%,
+          #dff6ff 0%,
+          var(--color-bg) 55%,
+          #7ec4ff 100%
+        )
+        fixed;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+    }
+
+    /* ========================================================================
+       3. Full-screen backgrounds (cover — no stretch)
+       ======================================================================== */
+    .bg-stack {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      min-height: 100vh;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .bg-layer {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background-size: cover;
+      background-position: center center;
+      background-repeat: no-repeat;
+      opacity: 0;
+      transition: opacity var(--bg-crossfade-ms) var(--ease-out);
+      will-change: opacity;
+    }
+
+    .bg-layer.visible {
+      opacity: 1;
+    }
+
+    .bg-layer::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      /* Keep art bright — only a whisper of tint for depth */
+      background: linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.06) 0%,
+        rgba(30, 90, 140, 0.12) 100%
+      );
+      pointer-events: none;
+    }
+
+    /* ========================================================================
+       3b. Anger escalation — only active during scene id "annoy_scene"
+       ======================================================================== */
+    .anger-fx {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+    }
+
+    .anger-fx[hidden] {
+      display: none !important;
+    }
+
+    /* Vídeo full-screen antes do texto (cenas com `video` no STORY) */
+    .story-video-layer {
+      position: fixed;
+      inset: 0;
+      z-index: 12;
+      display: grid;
+      place-items: center;
+      background: #000;
+    }
+
+    .story-video-layer[hidden] {
+      display: none !important;
+    }
+
+    .story-video {
+      width: 100%;
+      height: 100%;
+      max-height: 100dvh;
+      object-fit: contain;
+      vertical-align: middle;
+    }
+
+    .anger-fx__overlay {
+      position: absolute;
+      inset: 0;
+      background: rgb(220, 30, 30);
+      opacity: 0;
+      transition: opacity 0.22s ease-out;
+    }
+
+    .anger-fx__symbols {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    .anger-symbol {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      font-size: clamp(1.65rem, 4.8vw, 2.85rem);
+      line-height: 1;
+      transform: translate(-50%, -50%);
+      filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+      animation: angerWobble 0.5s ease-in-out infinite alternate;
+      user-select: none;
+    }
+
+    @keyframes angerWobble {
+      from {
+        transform: translate(-50%, -50%) rotate(-10deg) scale(1);
+      }
+      to {
+        transform: translate(-50%, -50%) rotate(10deg) scale(1.1);
+      }
+    }
+
+    /* ========================================================================
+       4. Start overlay (audio unlock)
+       ======================================================================== */
+    .start-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      padding: var(--page-pad-x);
+      background: rgba(180, 230, 255, 0.35);
+      backdrop-filter: blur(10px) saturate(130%);
+      transition: opacity 0.45s var(--ease-out), visibility 0.45s;
+    }
+
+    .start-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .start-card {
+      width: min(22rem, 100%);
+      max-width: var(--panel-max-width);
+      padding: clamp(1.35rem, 4.5vw, 2rem);
+      border-radius: var(--panel-radius);
+      text-align: center;
+      background: linear-gradient(
+        155deg,
+        var(--glass-shine) 0%,
+        rgba(255, 255, 255, 0.12) 100%
+      );
+      background-color: var(--glass-fill);
+      border: 1.5px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(18px) saturate(140%);
+      -webkit-backdrop-filter: blur(18px) saturate(140%);
+    }
+
+    .start-card h1 {
+      margin: 0 0 0.45rem;
+      font-weight: 800;
+      font-size: clamp(1.08rem, 3.4vw, 1.32rem);
+      letter-spacing: 0.03em;
+      color: var(--color-text);
+      text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+    }
+
+    .start-card p {
+      margin: 0 auto 1.35rem;
+      color: var(--color-muted);
+      font-size: clamp(0.8rem, 2.35vw, 0.9rem);
+      line-height: 1.58;
+      max-width: 34ch;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: var(--touch-min-height);
+      padding: 0.62rem 1.65rem;
+      border: none;
+      border-radius: 999px;
+      font-family: inherit;
+      font-weight: 700;
+      font-size: clamp(0.84rem, 2.25vw, 0.93rem);
+      cursor: pointer;
+      color: #fff;
+      background: linear-gradient(
+        145deg,
+        #6ec8ff 0%,
+        var(--color-accent-deep) 48%,
+        #6ab9ff 100%
+      );
+      box-shadow: 0 6px 0 rgba(30, 110, 180, 0.35), 0 10px 24px rgba(60, 150, 230, 0.35);
+      touch-action: manipulation;
+      transition:
+        transform 0.22s var(--ease-playful),
+        box-shadow 0.22s ease,
+        filter 0.2s ease;
+    }
+
+    @media (hover: hover) {
+      .btn-primary:hover {
+        transform: translateY(-3px) scale(1.03);
+        filter: saturate(1.08) brightness(1.03);
+        box-shadow: 0 8px 0 rgba(30, 110, 180, 0.32), 0 14px 28px rgba(60, 150, 230, 0.4);
+      }
+    }
+
+    .btn-primary:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: 0 3px 0 rgba(30, 110, 180, 0.35), 0 6px 16px rgba(60, 150, 230, 0.28);
+    }
+
+    /* ========================================================================
+       5. Main shell — centered content
+       ======================================================================== */
+    .game {
+      position: relative;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      min-height: -webkit-fill-available;
+      padding: var(--page-pad-y) var(--page-pad-x);
+    }
+
+    .panel {
+      width: 100%;
+      max-width: var(--panel-max-width);
+      margin-inline: auto;
+      padding: var(--panel-pad-y) var(--panel-pad-x);
+      border-radius: var(--panel-radius);
+      background: linear-gradient(
+        160deg,
+        var(--glass-shine) 0%,
+        rgba(255, 255, 255, 0.1) 48%,
+        rgba(150, 220, 255, 0.12) 100%
+      );
+      background-color: var(--glass-fill);
+      border: 1.5px solid var(--glass-border);
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(18px) saturate(145%);
+      -webkit-backdrop-filter: blur(18px) saturate(145%);
+      max-height: min(78vh, calc(100vh - 2 * var(--page-pad-y)));
+      max-height: min(78dvh, calc(100dvh - 2 * var(--page-pad-y)));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    /* ========================================================================
+       6. Story text
+       ======================================================================== */
+    .story-text {
+      flex: 1 1 auto;
+      width: 100%;
+      max-width: var(--story-max-ch);
+      min-height: min(9rem, 26vh);
+      margin: 0 auto clamp(1.15rem, 3vh, 1.75rem);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+      font-weight: 500;
+      font-size: clamp(var(--story-font-min), 1.85vw + 0.44rem, var(--story-font-max));
+      line-height: 1.64;
+      letter-spacing: 0.01em;
+      text-align: left;
+      color: #f2f9ff;
+      text-shadow: 0 1px 2px rgba(0, 30, 55, 0.45), 0 2px 12px rgba(0, 40, 80, 0.25);
+    }
+
+    .story-text .cursor {
+      display: inline-block;
+      width: 0.55ch;
+      margin-left: 1px;
+      animation: blink 0.9s step-end infinite;
+      vertical-align: text-bottom;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    /* ========================================================================
+       7. Choices — vertical stack, touch-friendly
+       ======================================================================== */
+    .choices {
+      display: flex;
+      flex-direction: column;
+      flex-wrap: nowrap;
+      align-items: center;
+      gap: var(--choice-gap);
+      flex-shrink: 0;
+      width: 100%;
+      padding-bottom: 0.15rem;
+    }
+
+    .choice-btn {
+      width: fit-content;
+      max-width: var(--choice-max-width);
+      min-width: min(10rem, 100%);
+      min-height: var(--choice-btn-min-h);
+      padding: 0.5rem 0.82rem;
+      border-radius: 999px;
+      border: 1.5px solid rgba(255, 255, 255, 0.62);
+      background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.78) 0%,
+        rgba(230, 248, 255, 0.52) 100%
+      );
+      color: var(--color-text-soft);
+      font-family: inherit;
+      font-weight: 700;
+      font-size: clamp(var(--choice-font-min), 1.45vw + 0.38rem, var(--choice-font-max));
+      line-height: 1.32;
+      text-align: center;
+      cursor: pointer;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: rgba(110, 200, 255, 0.22);
+      box-shadow: 0 4px 0 rgba(70, 140, 190, 0.2), 0 8px 18px rgba(40, 100, 160, 0.12);
+
+      opacity: 0;
+      transform: translateY(12px);
+      animation: choiceRise 0.58s var(--ease-playful) forwards;
+      transition:
+        background 0.26s ease,
+        border-color 0.26s ease,
+        transform 0.22s var(--ease-playful),
+        box-shadow 0.22s ease,
+        color 0.2s ease;
+    }
+
+    .choice-btn:nth-child(1) {
+      animation-delay: 0.06s;
+    }
+
+    .choice-btn:nth-child(2) {
+      animation-delay: 0.14s;
+    }
+
+    .choice-btn:nth-child(3) {
+      animation-delay: 0.22s;
+    }
+
+    @media (hover: hover) {
+      .choice-btn:hover:not(:disabled) {
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.95) 0%,
+          rgba(200, 236, 255, 0.72) 100%
+        );
+        border-color: rgba(110, 200, 255, 0.85);
+        color: var(--color-text);
+        transform: translateY(-4px) scale(1.04);
+        box-shadow: 0 6px 0 rgba(70, 140, 190, 0.22), 0 14px 26px rgba(50, 140, 200, 0.2);
+      }
+    }
+
+    .choice-btn:active:not(:disabled) {
+      transform: translateY(1px) scale(0.97);
+      box-shadow: 0 2px 0 rgba(70, 140, 190, 0.22), 0 5px 14px rgba(40, 100, 160, 0.14);
+    }
+
+    .choice-btn:focus-visible {
+      outline: 3px solid rgba(120, 210, 255, 0.95);
+      outline-offset: 3px;
+    }
+
+    .choice-btn[hidden] {
+      display: none !important;
+    }
+
+    /* ========================================================================
+       8. Scene / panel animations
+       ======================================================================== */
+    .panel-fade-in {
+      animation: panelSceneIn var(--scene-fade-ms) var(--ease-playful) forwards;
+    }
+
+    @keyframes panelSceneIn {
+      from {
+        opacity: 0;
+        transform: translateY(18px) scale(0.96);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    @keyframes choiceRise {
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (min-width: 960px) {
+      :root {
+        --page-pad-x: clamp(1.35rem, 8vw, 4rem);
+        --page-pad-y: clamp(1.5rem, 6vh, 3rem);
+      }
+    }
+
+    /* Phones / narrow screens: smaller story card, less vertical takeover */
+    @media (max-width: 640px) {
+      :root {
+        --panel-max-width: min(21.5rem, calc(100vw - 2.6rem));
+        --panel-pad-y: clamp(0.8rem, 2.8vw, 1.05rem);
+        --panel-pad-x: clamp(0.8rem, 3.2vw, 1.1rem);
+        --panel-radius: 1.2rem;
+        --page-pad-x: clamp(1rem, 4.5vw, 1.35rem);
+        --page-pad-y: clamp(0.95rem, 3.5vh, 1.5rem);
+        --story-max-ch: 34ch;
+        --story-font-min: 0.75rem;
+        --story-font-max: 0.875rem;
+        --choice-font-min: 0.7rem;
+        --choice-font-max: 0.78rem;
+        --choice-btn-min-h: 2.4rem;
+        --choice-gap: clamp(0.5rem, 1.8vw, 0.72rem);
+      }
+
+      .panel {
+        max-height: min(62vh, calc(100vh - 2 * var(--page-pad-y)));
+        max-height: min(62dvh, calc(100dvh - 2 * var(--page-pad-y)));
+      }
+
+      .story-text {
+        min-height: min(5.5rem, 16vh);
+        font-size: clamp(0.74rem, 3.2vw + 0.36rem, 0.86rem);
+        line-height: 1.58;
+      }
+
+      .choice-btn {
+        font-size: clamp(0.68rem, 2.85vw + 0.3rem, 0.76rem);
+        padding: 0.45rem 0.72rem;
+        min-width: min(9.25rem, 100%);
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .bg-layer {
+        transition-duration: 0.01ms;
+      }
+
+      .panel-fade-in {
+        animation: none;
+        opacity: 1;
+        transform: none;
+      }
+
+      .choice-btn {
+        animation: none;
+        opacity: 1;
+        transform: none;
+      }
+
+      .story-text .cursor {
+        animation: none;
+        opacity: 1;
+      }
+
+      .anger-symbol {
+        animation: none;
+      }
+
+      .anger-fx__overlay {
+        transition: none;
+      }
+
+      .btn-primary,
+      .choice-btn {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-stack" aria-hidden="true">
+    <div id="bgA" class="bg-layer visible"></div>
+    <div id="bgB" class="bg-layer"></div>
+  </div>
+
+  <!-- Full-screen anger VFX: toggled only in scene "annoy_scene" (see AngerEscalation in script) -->
+  <div id="angerFx" class="anger-fx" hidden aria-hidden="true">
+    <div id="angerOverlay" class="anger-fx__overlay" aria-hidden="true"></div>
+    <div id="angerSymbols" class="anger-fx__symbols" aria-hidden="true"></div>
+  </div>
+
+  <!-- Vídeo introdutório de cena (ex.: id boom) — ver propriedade `video` no STORY -->
+  <div id="storyVideoLayer" class="story-video-layer" hidden aria-hidden="true">
+    <video
+      id="storyVideo"
+      class="story-video"
+      playsinline
+      preload="auto"
+      disablepictureinpicture
+      controlslist="nodownload noplaybackrate"
+    ></video>
+  </div>
+
+  <audio
+    id="bgm"
+    loop
+    preload="auto"
+    src="images/Pokemon Ruby_Sapphire_Emerald- Littleroot Town - pokemonmusicmaster (youtube).mp3"
+  ></audio>
+
+  <audio id="choiceClickSfx" preload="auto" playsinline src="images/choice-click.wav"></audio>
+
+  <div id="startScreen" class="start-screen">
+    <div class="start-card">
+      <h1>Sua aventura espera!</h1>
+      <p>Escolha com sabedoria.</p>
+      <button type="button" class="btn-primary" id="startBtn">Acordar</button>
+    </div>
+  </div>
+
+  <main class="game">
+    <div id="panel" class="panel panel-fade-in">
+      <p id="storyText" class="story-text" aria-live="polite"></p>
+      <div class="choices" role="group" aria-label="Choices">
+        <button type="button" class="choice-btn" data-slot="0"></button>
+        <button type="button" class="choice-btn" data-slot="1"></button>
+        <button type="button" class="choice-btn" data-slot="2"></button>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    /**
+     * -------------------------------------------------------------------------
+     * Story graph — backgrounds & sounds (data-driven)
+     * -------------------------------------------------------------------------
+     * Each SCENE may include:
+     *   id, text, background (image URL),
+     *   sound (optional) — one-shot audio when this scene loads; previous scene
+     *       sound is stopped so long clips do not stack.
+     *   soundLoop (optional) — se true, `sound` fica em loop até sair da cena.
+     *   video (optional) — caminho para um .mp4; o vídeo é mostrado em ecrã cheio
+     *       primeiro; quando termina (ou se falhar a reproduzir), o fluxo normal
+     *       continua (fundo, texto com typewriter, escolhas, sound da cena).
+     *
+     * Each CHOICE may include:
+     *   text,
+     *   nextId — target scene id (alias: "next" works the same),
+     *   sound (optional) — plays on button tap; restarts from 0 if spammed.
+     *       If set, this replaces the default UI click beep for that button.
+     *   annoyEscalate (optional, only on annoy_scene loop choice)
+     *
+     * Example:
+     *   cave: {
+     *     id: "cave",
+     *     text: "You found something strange...",
+     *     background: "images/cave.jpg",
+     *     sound: "sounds/ambient.mp3",
+     *     choices: [
+     *       {
+     *         id: "open_box",
+     *         text: "Open the box",
+     *         nextId: "box_scene",
+     *         sound: "sounds/open.mp3",
+     *       },
+     *     ],
+     *   },
+     *
+     * Sounds are cached: one HTMLAudioElement per file URL (see SoundManager).
+     * -------------------------------------------------------------------------
+     */
+
+    /**
+     * Cached HTMLAudioElement per URL; scene layer stops previous scene clip.
+     * choice/UI SFX reuse the same pool so repeated taps restart currentTime.
+     */
+    const SoundManager = (() => {
+      /** @type {Map<string, HTMLAudioElement>} */
+      const pool = new Map();
+      /** @type {HTMLAudioElement | null} */
+      let sceneActive = null;
+
+      function norm(url) {
+        if (!url || typeof url !== "string") return null;
+        const t = url.trim();
+        return t || null;
+      }
+
+      function getAudio(url) {
+        const u = norm(url);
+        if (!u) return null;
+        if (!pool.has(u)) {
+          const a = new Audio();
+          a.preload = "auto";
+          a.src = encodeURI(u);
+          pool.set(u, a);
+        }
+        return pool.get(u);
+      }
+
+      function preload(url) {
+        const a = getAudio(url);
+        if (a) a.load();
+      }
+
+      /** Collect every sound URL from the story object for preloading. */
+      function collectUrls(story) {
+        const out = new Set();
+        for (const sc of Object.values(story)) {
+          if (sc && sc.sound) out.add(sc.sound);
+          for (const ch of sc.choices || []) {
+            if (ch && ch.sound) out.add(ch.sound);
+          }
+        }
+        return [...out];
+      }
+
+      function preloadFromStory(story) {
+        collectUrls(story).forEach(preload);
+      }
+
+      /**
+       * Short effects / choice sounds — same URL shares one element; restarts.
+       */
+      function playSfx(url, volume = 0.92) {
+        const a = getAudio(url);
+        if (!a) return;
+        a.volume = volume;
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      }
+
+      function stopSceneSound() {
+        if (sceneActive) {
+          sceneActive.loop = false;
+          sceneActive.pause();
+          sceneActive.currentTime = 0;
+        }
+        sceneActive = null;
+      }
+
+      /** Scene ambience / sting — stops whatever the previous scene was playing. */
+      function playSceneSound(url, volume = 0.88, loop = false) {
+        stopSceneSound();
+        const u = norm(url);
+        if (!u) return;
+        const a = getAudio(u);
+        sceneActive = a;
+        a.loop = !!loop;
+        a.volume = volume;
+        a.currentTime = 0;
+        const p = a.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      }
+
+      /** After user gesture: unlock pooled elements (mobile Safari). */
+      async function primeAll() {
+        for (const a of pool.values()) {
+          try {
+            const v = a.volume;
+            a.muted = true;
+            await a.play();
+            a.pause();
+            a.currentTime = 0;
+            a.muted = false;
+            a.volume = v;
+          } catch (_) {
+            try {
+              a.muted = false;
+            } catch (_e) {
+              /* ignore */
+            }
+          }
+        }
+      }
+
+      return {
+        getAudio,
+        preload,
+        preloadFromStory,
+        playSfx,
+        playSceneSound,
+        stopSceneSound,
+        primeAll,
+      };
+    })();
+
+    /** Resolve target scene id — supports `nextId` or alias `next`. */
+    function choiceNext(choice) {
+      if (!choice) return null;
+      const n = choice.nextId ?? choice.next;
+      return n == null || n === "" ? null : String(n);
+    }
+
+    const STORY = {
+      wake: {
+        id: "wake",
+        text: `Você acorda com o som suave das ondas quebrando a sua frente.  A areia fria sobre suas mãos e uma dor de cabeça forte te deixa desnorteado.
+
+De repente, um pequeno Piplup aparece à sua frente, inclinando a cabeça e te observando como se estivesse julgando cada decisão da sua vida até agora.`,
+        background: "images/canva.png",
+        choices: [
+          { text: "Encarar o Piplup", nextId: "encarar_piplup" },
+          { text: "Olá! qual o seu nome?", nextId: "nome_piplup" },
+          { text: "Você é um pouco gordo para um penguin, não é?", nextId: "bravo_piplup" },
+        ],
+      },
+      encarar_piplup: {
+        id: "encarar_piplup",
+        text: "Ele fica te olhando por um momento, em dúvida se vocé está com um olhar de confusão ou burrice.",
+        background: "images/bothered.webp",
+        choices: [
+          { text: "Continuar encarando", nextId: "annoy_scene" },
+          { text: "Olá! qual o seu nome?", nextId: "nome_piplup" },
+          { text: "Você é um pouco gordo para um penguin, não é?", nextId: "bravo_piplup" },
+        ],
+      },
+      annoy_scene: {
+        id: "annoy_scene",
+        text: `O Piplup não pisca. O silêncio fica constrangedor e cada segundo que você mantém o olhar parece deixá-lo um pouquinho mais irritado.`,
+        background: "images/bothered.webp",
+        choices: [
+          {
+            text: "Continuar encarando",
+            nextId: "annoy_scene",
+            annoyEscalate: true,
+          },
+          { text: "Olá! qual o seu nome?", nextId: "nome_piplup" },
+          { text: "Você é um pouco gordo para um penguin, não é?", nextId: "bravo_piplup" },
+        ],
+      },
+      nome_piplup: {
+        id: "nome_piplup",
+        text: "Ele aparece animado em dizer seu nome, ele também aparenta estar faminto.",
+        background: "images/demanding.jpg",
+        sound: "images/Voicy_Piplup sound effect.mp3",
+        choices: [
+          { text: "Pescar algo para ele", nextId: "pescar" },
+          { text: "Seguir para cidade mais próxima atrás de algo", nextId: "cidade" },
+        ],
+      },
+      bravo_piplup: {
+        id: "bravo_piplup",
+        text: "Ele fica bravo, você consegue ver o rosto de um assasino frio e calculista.",
+        background: "images/mad.jpg",
+        sound: "images/Voicy_Pipulp angry.mp3",
+        choices: [
+          { text: "Pedir desculpas e oferecer um peixe para ele", nextId: "pescar" },
+          { text: "Pedir desculpas e ir chamar ele para comer algo", nextId: "cidade" },
+        ],
+      },
+      pescar: {
+        id: "pescar",
+        text: `Ao colocar a mão no bolso, você percebe uma papel do que parece ser uma arte de vários peixes bem detalhados, tendo uma sensação de que você mesma criou.
+
+Você sente uma confiança de que tem algum conhecimento sobre pesca.`,
+        background: "images/pesca.jpg",
+        choices: [
+          { text: "Tentar pescar algo", nextId: "ending_sem_peixe" },
+          { text: "Desistir e pedir um ifood", nextId: "ending_com_peixe" },
+        ],
+      },
+      ending_sem_peixe: {
+        id: "ending_sem_peixe",
+        text: "Você percebe que na verdade não tem nenhuma habilidade em pesca, e ambos morrem de fome.",
+        background: "images/Defeated.jpg",
+        choices: [
+          { text: "Recomeçar", nextId: "wake" },
+        ],
+      },
+      ending_com_peixe: {
+        id: "ending_com_peixe",
+        text: "Após a entrega do peixe, o Piplup fica extremamente feliz e decide ser seu novo pokémon, vocês dois vivem felizes para sempre juntos comendo peixe e jogando Elden Ring.",
+        background: "images/piplup_fish.webp",
+        choices: [
+          { text: "Recomeçar", nextId: "wake" },
+        ],
+      },
+      cidade: {
+        id: "cidade",
+        text: "Durante a viagem para a cidade mais próxima, você percebe que o Piplup está querendo liderar o caminho mas não sente muita confiança nele.",
+        background: "images/demanding.jpg",
+        choices: [
+          { text: "Deixar ele liderar o caminho", nextId: "boom" },
+          { text: "Seguir em frente mesmo assim", nextId: "restaurante" },
+        ],
+      },
+      boom: {
+        id: "boom",
+        video:
+          "images/piplup walks then explodes - runegate (360p, h264, youtube).mp4",
+        text: "Piplup is fucking dead, ele pisou em uma mina terrestre e explodiu.",
+        background: "images/Defeated.jpg",
+        choices: [
+          { text: "Recomeçar", nextId: "wake" },
+        ],
+      },
+      restaurante: {
+        id: "restaurante",
+        text: "Vocês chegam ao restaurante da cidade e o Piplup se apaixona pela garçonete que serviu ele, não mais ligando para você ou nada em volta dele",
+        background: "images/piplup_maid.jpg",
+        choices: [
+          { text: "Incentivar ele a seguir o coração dele", nextId: "ending_amor" },
+          { text: "Entrar em depressão por ter perdido seu pokémon e ouvir Jeff Buckley", nextId: "ending_jeff" },
+        ],
+      },
+      ending_amor: {
+        id: "ending_amor",
+          text: "Piplup e a garçonete Piplupa se apaixonam e vivem felizes para sempre, até o divorcio depois de 10 anos de casamento, devido ao vício de apostas de Piplup.",
+          background: "images/Heart eyes.jpg",
+          sound: "images/Voicy_piplup in love.mp3",
+          choices: [
+            { text: "Recomeçar", nextId: "wake" },
+          ],
+        },
+      ending_jeff: {
+        id: "ending_jeff",
+        text: "Os residentes da cidade ficam confusos com o som de Jeff Buckley saindo a noite toda do bar.",
+        background: "images/cidade_noite.webp",
+        sound: "images/jeff.m4a",
+        soundLoop: true,
+        choices: [
+          { text: "Recomeçar", nextId: "wake" },
+        ],
+      },
+    };
+
+    SoundManager.preloadFromStory(STORY);
+
+    const INITIAL_SCENE_ID = "wake";
+
+    const bgA = document.getElementById("bgA");
+    const bgB = document.getElementById("bgB");
+    const storyEl = document.getElementById("storyText");
+    const panelEl = document.getElementById("panel");
+    const choiceButtons = [...document.querySelectorAll(".choice-btn")];
+    const bgm = document.getElementById("bgm");
+    const JEFF_ENDING_ID = "ending_jeff";
+    const BGM_DEFAULT_VOLUME = 0.35;
+    let bgmVolumeBeforeJeff = BGM_DEFAULT_VOLUME;
+
+    /** Em ending_jeff: BGM fica inaudível; ao sair, restaura o volume usado antes. */
+    function applyBgmForSceneTransition(toSceneId, fromSceneId) {
+      if (!bgm) return;
+      if (toSceneId === JEFF_ENDING_ID) {
+        if (bgm.volume > 0) bgmVolumeBeforeJeff = bgm.volume;
+        bgm.volume = 0;
+      } else if (fromSceneId === JEFF_ENDING_ID) {
+        bgm.volume = bgmVolumeBeforeJeff;
+      }
+    }
+
+    const choiceClickSfx = document.getElementById("choiceClickSfx");
+    const startScreen = document.getElementById("startScreen");
+    const startBtn = document.getElementById("startBtn");
+    const storyVideoLayer = document.getElementById("storyVideoLayer");
+    const storyVideo = document.getElementById("storyVideo");
+
+    /** Volume base 0.55, +75% → clamp ≤ 1 */
+    const CHOICE_CLICK_VOLUME = Math.min(1, 0.55 * 1.75);
+
+    function playChoiceClickSound() {
+      const sfx = choiceClickSfx;
+      if (!sfx) return;
+      try {
+        sfx.currentTime = 0;
+        const p = sfx.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      } catch (_) {
+        /* ignore */
+      }
+    }
+
+    /** Prime SFX on first user gesture (same tap as BGM) so later choice taps can play. */
+    async function primeChoiceClickSound() {
+      const sfx = choiceClickSfx;
+      if (!sfx) return;
+      try {
+        sfx.volume = CHOICE_CLICK_VOLUME;
+        sfx.currentTime = 0;
+        await sfx.play();
+        sfx.pause();
+        sfx.currentTime = 0;
+      } catch (_) {
+        /* still try on each choice via playChoiceClickSound */
+      }
+    }
+
+    if (choiceClickSfx) {
+      choiceClickSfx.volume = CHOICE_CLICK_VOLUME;
+    }
+
+    let topLayerIsA = true;
+    let typewriterToken = 0;
+    let hasCrossfadedOnce = false;
+    /** @type {string | null} */
+    let currentSceneId = null;
+
+    /**
+     * Anger escalation — ONLY for scene id "annoy_scene", ONLY when clicking
+     * a choice marked with annoyEscalate (loops to same scene).
+     */
+    const AngerEscalation = (() => {
+      const ANGER_SCENE_ID = "annoy_scene";
+      const fx = document.getElementById("angerFx");
+      const overlay = document.getElementById("angerOverlay");
+      const symbolsRoot = document.getElementById("angerSymbols");
+
+      const BASE_OPACITY = 0.1;
+      const MAX_OPACITY = 0.68;
+      const STEP = 0.065;
+      const SYMBOLS_PER_CLICK = 3;
+
+      let level = 0;
+
+      function updateOverlayOpacity() {
+        const o = Math.min(MAX_OPACITY, BASE_OPACITY + level * STEP);
+        overlay.style.opacity = String(o);
+      }
+
+      function spawnAngerSymbols() {
+        const frag = document.createDocumentFragment();
+        for (let i = 0; i < SYMBOLS_PER_CLICK; i++) {
+          const el = document.createElement("div");
+          el.className = "anger-symbol";
+          el.textContent = "💢";
+          el.style.left = `${8 + Math.random() * 84}%`;
+          el.style.top = `${10 + Math.random() * 76}%`;
+          el.style.animationDelay = `${Math.random() * 0.45}s`;
+          frag.appendChild(el);
+        }
+        symbolsRoot.appendChild(frag);
+      }
+
+      function deactivate() {
+        level = 0;
+        overlay.style.opacity = "0";
+        symbolsRoot.replaceChildren();
+        fx.hidden = true;
+        fx.setAttribute("aria-hidden", "true");
+      }
+
+      function activateFresh() {
+        level = 0;
+        symbolsRoot.replaceChildren();
+        overlay.style.opacity = String(BASE_OPACITY);
+        fx.hidden = false;
+        fx.setAttribute("aria-hidden", "false");
+      }
+
+      /** Call before showScene when the annoy button was clicked (same scene). */
+      function incrementFromAnnoyChoice() {
+        level += 1;
+        updateOverlayOpacity();
+        spawnAngerSymbols();
+      }
+
+      return {
+        ANGER_SCENE_ID,
+        deactivate,
+        activateFresh,
+        incrementFromAnnoyChoice,
+      };
+    })();
+
+    function getScene(id) {
+      const scene = STORY[id];
+      if (!scene) {
+        console.warn("Missing scene:", id);
+        return STORY[INITIAL_SCENE_ID];
+      }
+      return scene;
+    }
+
+    function setBackgroundImage(url) {
+      const visible = topLayerIsA ? bgA : bgB;
+      const hidden = topLayerIsA ? bgB : bgA;
+      const next = `url("${encodeURI(url)}")`;
+
+      if (!hasCrossfadedOnce) {
+        visible.style.backgroundImage = next;
+        visible.classList.add("visible");
+        hidden.classList.remove("visible");
+        hasCrossfadedOnce = true;
+        return;
+      }
+
+      hidden.style.backgroundImage = next;
+      hidden.classList.add("visible");
+      visible.classList.remove("visible");
+      topLayerIsA = !topLayerIsA;
+    }
+
+    function stopTypewriter() {
+      typewriterToken += 1;
+    }
+
+    function runTypewriter(fullText, token) {
+      storyEl.textContent = "";
+      const cursor = document.createElement("span");
+      cursor.className = "cursor";
+      cursor.setAttribute("aria-hidden", "true");
+
+      let i = 0;
+      const speedMs = 22;
+
+      function tick() {
+        if (token !== typewriterToken) return;
+        if (i <= fullText.length) {
+          while (storyEl.firstChild) storyEl.removeChild(storyEl.firstChild);
+          storyEl.appendChild(document.createTextNode(fullText.slice(0, i)));
+          storyEl.appendChild(cursor);
+          i += 1;
+          window.setTimeout(tick, speedMs);
+        } else if (cursor.parentNode === storyEl) {
+          storyEl.removeChild(cursor);
+        }
+      }
+
+      tick();
+    }
+
+    function refreshChoiceAnimations() {
+      choiceButtons.forEach((btn) => {
+        btn.style.animation = "none";
+        void btn.offsetWidth;
+        btn.style.animation = "";
+      });
+    }
+
+    function renderChoices(scene) {
+      const list = scene.choices || [];
+      choiceButtons.forEach((btn, idx) => {
+        const c = list[idx];
+        const next = choiceNext(c);
+        if (c && next) {
+          btn.hidden = false;
+          btn.disabled = false;
+          btn.textContent = c.text;
+          btn.dataset.nextId = next;
+          if (c.annoyEscalate) btn.dataset.annoyEscalate = "1";
+          else delete btn.dataset.annoyEscalate;
+          if (c.sound) btn.dataset.choiceSound = c.sound;
+          else delete btn.dataset.choiceSound;
+        } else {
+          btn.hidden = true;
+          btn.disabled = true;
+          btn.textContent = "";
+          delete btn.dataset.nextId;
+          delete btn.dataset.annoyEscalate;
+          delete btn.dataset.choiceSound;
+        }
+      });
+      refreshChoiceAnimations();
+    }
+
+    function flashPanel() {
+      panelEl.classList.remove("panel-fade-in");
+      void panelEl.offsetWidth;
+      panelEl.classList.add("panel-fade-in");
+    }
+
+    /** Painel habitual: imagem, animação do painel, texto, escolhas, som da cena. */
+    function runSceneContent(scene, myToken) {
+      setBackgroundImage(scene.background);
+      flashPanel();
+      runTypewriter(scene.text, myToken);
+      renderChoices(scene);
+      SoundManager.playSceneSound(scene.sound, 0.88, !!scene.soundLoop);
+    }
+
+    /**
+     * Se a cena tiver `video`, mostra o MP4 a ecrã inteiro; ao terminar (ou erro),
+     * continua com runSceneContent. Reutiliza um único elemento de vídeo no DOM.
+     */
+    function playSceneVideoThenContinue(scene, myToken) {
+      const url = scene.video;
+      if (!url || !storyVideo || !storyVideoLayer) {
+        runSceneContent(scene, myToken);
+        return;
+      }
+
+      storyEl.textContent = "";
+      choiceButtons.forEach((btn) => {
+        btn.hidden = true;
+        btn.disabled = true;
+        delete btn.dataset.nextId;
+        delete btn.dataset.annoyEscalate;
+        delete btn.dataset.choiceSound;
+      });
+
+      storyVideoLayer.hidden = false;
+      storyVideoLayer.setAttribute("aria-hidden", "false");
+
+      const finish = () => {
+        storyVideo.removeEventListener("ended", onEnded);
+        storyVideo.removeEventListener("error", onError);
+        try {
+          storyVideo.pause();
+          storyVideo.removeAttribute("src");
+          storyVideo.load();
+        } catch (_) {
+          /* ignore */
+        }
+        storyVideoLayer.hidden = true;
+        storyVideoLayer.setAttribute("aria-hidden", "true");
+        runSceneContent(scene, myToken);
+      };
+
+      function onEnded() {
+        finish();
+      }
+      function onError() {
+        finish();
+      }
+
+      storyVideo.addEventListener("ended", onEnded);
+      storyVideo.addEventListener("error", onError);
+      storyVideo.src = encodeURI(url);
+      storyVideo.currentTime = 0;
+      const p = storyVideo.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => finish());
+      }
+    }
+
+    function showScene(sceneId) {
+      const prev = currentSceneId;
+      currentSceneId = sceneId;
+
+      if (sceneId !== AngerEscalation.ANGER_SCENE_ID) {
+        AngerEscalation.deactivate();
+      } else if (prev !== AngerEscalation.ANGER_SCENE_ID) {
+        AngerEscalation.activateFresh();
+      }
+
+      const scene = getScene(sceneId);
+      applyBgmForSceneTransition(sceneId, prev);
+      stopTypewriter();
+      const myToken = typewriterToken;
+
+      if (scene.video) {
+        playSceneVideoThenContinue(scene, myToken);
+      } else {
+        runSceneContent(scene, myToken);
+      }
+    }
+
+    choiceButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const next = btn.dataset.nextId;
+        if (!next) return;
+        const storyChoiceSound = btn.dataset.choiceSound;
+        if (storyChoiceSound) {
+          SoundManager.playSfx(storyChoiceSound);
+        } else {
+          playChoiceClickSound();
+        }
+        const isAnnoyLoop =
+          currentSceneId === AngerEscalation.ANGER_SCENE_ID &&
+          next === AngerEscalation.ANGER_SCENE_ID &&
+          btn.dataset.annoyEscalate === "1";
+        if (isAnnoyLoop) {
+          AngerEscalation.incrementFromAnnoyChoice();
+        }
+        showScene(next);
+      });
+    });
+
+    startBtn.addEventListener("click", async () => {
+      startScreen.classList.add("hidden");
+      try {
+        bgm.volume = BGM_DEFAULT_VOLUME;
+        await bgm.play();
+      } catch (e) {
+        console.warn("Audio play blocked or failed:", e);
+      }
+      await primeChoiceClickSound();
+      await SoundManager.primeAll();
+      showScene(INITIAL_SCENE_ID);
+    });
+
+    // Prime first background before start (no transition flicker on Begin)
+    (function initBg() {
+      const first = getScene(INITIAL_SCENE_ID);
+      bgA.style.backgroundImage = `url("${encodeURI(first.background)}")`;
+      bgA.classList.add("visible");
+      bgB.classList.remove("visible");
+      topLayerIsA = true;
+    })();
+  </script>
+</body>
+</html>
